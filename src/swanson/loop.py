@@ -11,12 +11,36 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from swanson.config import config
 from swanson.executor import Executor
 from swanson.history_logger import HistoryLogger
 from swanson.state_manager import StateManager
+
+
+def _timestamp() -> str:
+    """US-002: Get current time as HH:MM:SS for progress indicators."""
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _elapsed(start_time: float) -> str:
+    """
+    US-002: Calculate elapsed time in human-readable format.
+
+    Args:
+        start_time: Time.time() value from start of operation
+
+    Returns:
+        Formatted string like "1m 27s" or "42s"
+    """
+    elapsed = time.time() - start_time
+    mins = int(elapsed // 60)
+    secs = int(elapsed % 60)
+    if mins > 0:
+        return f"{mins}m {secs}s"
+    return f"{secs}s"
 
 
 def _archive_test_files(prd_filename: str) -> None:
@@ -138,20 +162,21 @@ def main():
 
         # Phase 1: Test Generation
         test_file = Path(f"tests/test_{current_story}.py")
-        start_time = time.time()
+        phase_start = time.time()
 
         # US-001: Always verify tests fail, even if tests already exist
         # Determine if we need to generate tests or if they already exist
         test_exists = test_file.exists()
 
         if not test_exists:
-            # Generate new tests
-            print(f"=== Test Generation: {current_story} ===")
+            # Generate new tests - with progress indicator
+            print(f"\n[{_timestamp()}] === Test Generation: {current_story} ===")
+            gen_start = time.time()
             success, output = executor.execute_test_generation(prd_path, current_story)
 
             # Verify tests exist
             if not test_file.exists():
-                print(f"\n❌ BLOCKED: Test generation failed for {current_story}")
+                print(f"\n[{_timestamp()}] ❌ BLOCKED: Test generation failed for {current_story}")
                 print("\nClaude Code output:")
                 print(output)
                 history.log_block(
@@ -168,12 +193,12 @@ def main():
             history.log_test_generation(
                 current_story, current_prd, test_count, session_num
             )
-            print(f"✓ Tests generated ({test_count} test functions)\n")
+            print(f"[{_timestamp()}] ✓ Tests generated ({test_count} test functions, {_elapsed(gen_start)})\n")
         else:
             # US-002: Log when reusing existing tests from previous run
             test_content = test_file.read_text()
             test_count = test_content.count("def test_")
-            print(f"ℹ️  Reusing existing tests from previous run ({test_count} test functions)")
+            print(f"\n[{_timestamp()}] ℹ️  Reusing existing tests from previous run ({test_count} test functions)")
             print(
                 "   (To regenerate tests, delete tests/test_{}.py and rerun)\n".format(
                     current_story
@@ -182,14 +207,14 @@ def main():
 
         # US-001: Always verify tests fail before implementation
         # This must run whether tests are newly generated or reused
-        print("Verifying tests fail (expected state)...")
+        print(f"[{_timestamp()}] Verifying tests fail (expected state)...")
         result = subprocess.run(
             ["pytest", str(test_file), "-v"],
             capture_output=True,
         )
 
         if result.returncode == 0:
-            print(f"\n❌ BLOCKED: Tests passing before implementation (should fail)")
+            print(f"\n[{_timestamp()}] ❌ BLOCKED: Tests passing before implementation (should fail)")
             print("\nThis means tests are stubbed or feature already exists.")
             print(result.stdout.decode())
             history.log_block(
@@ -200,21 +225,22 @@ def main():
             )
             sys.exit(1)
 
-        print("✓ Tests verified as failing (ready for implementation)\n")
+        print(f"[{_timestamp()}] ✓ Tests verified as failing (ready for implementation)\n")
 
-        # Phase 2: Implementation
-        print(f"=== Implementation: {current_story} ===")
+        # Phase 2: Implementation - with progress indicator
+        print(f"[{_timestamp()}] === Implementation: {current_story} ===")
+        impl_start = time.time()
         success, output = executor.execute_implementation(prd_path, current_story)
 
         # Verify tests pass
-        print("\nVerifying tests pass...")
+        print(f"\n[{_timestamp()}] Verifying tests pass...")
         result = subprocess.run(
             ["pytest", str(test_file), "-v"],
             capture_output=True,
         )
 
         if result.returncode != 0:
-            print(f"\n❌ BLOCKED: Tests failing after implementation")
+            print(f"\n[{_timestamp()}] ❌ BLOCKED: Tests failing after implementation")
             print("\nPytest output:")
             print(result.stdout.decode())
             print(result.stderr.decode())
@@ -226,12 +252,11 @@ def main():
             )
             sys.exit(1)
 
-        print("✓ Tests passing\n")
+        print(f"[{_timestamp()}] ✓ Tests passing ({_elapsed(impl_start)})\n")
 
         # Parse test results
         stdout = result.stdout.decode()
         # Extract test counts (e.g., "5 passed in 0.12s")
-        import re
 
         match = re.search(r"(\d+) passed", stdout)
         passed = int(match.group(1)) if match else 0
@@ -239,10 +264,10 @@ def main():
         test_results = {"passed": passed, "total": passed, "failed": 0}
 
         # Phase 3: Completion
-        duration = int(time.time() - start_time)
+        duration = int(time.time() - phase_start)
 
         # Git commit
-        print("Creating git commit...")
+        print(f"[{_timestamp()}] Creating git commit...")
         commit_msg = executor.generate_commit_message(current_story, prd_path)
 
         subprocess.run(["git", "add", "."], check=True)
@@ -260,7 +285,7 @@ def main():
         )
         commit_hash = commit_hash_result.stdout.strip()
 
-        print(f"✓ Committed: {commit_hash}\n")
+        print(f"[{_timestamp()}] ✓ Committed: {commit_hash}\n")
 
         # Extract acceptance criteria
         acceptance_criteria = executor.context_loader.extract_acceptance_criteria(
@@ -284,10 +309,9 @@ def main():
             session_number=session_num,
         )
 
-        print(f"✓ Story {current_story} complete")
-        print(f"  Duration: {duration // 60} minutes")
+        print(f"[{_timestamp()}] ✓ Story {current_story} complete ({_elapsed(phase_start)})")
         print(f"  Tests: {test_results['passed']}/{test_results['total']} passed")
-        print(f"  Commit: {commit_hash}")
+        print(f"  Commit: {commit_hash}\n")
 
 
 if __name__ == "__main__":
