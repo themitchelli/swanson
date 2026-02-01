@@ -213,9 +213,16 @@ BLOCKED: <reason>
             # -p: pass prompt directly
             # --print: non-interactive output mode
             # --dangerously-skip-permissions: allow file writes for autonomous operation
-            # Pass API key from Swanson config to ensure correct key is used
+            # Pass API key to subprocess environment
+            # Priority: config.api_key (if valid) > existing ANTHROPIC_API_KEY env var
             env = os.environ.copy()
-            env["ANTHROPIC_API_KEY"] = config.api_key
+            if config.api_key:
+                env["ANTHROPIC_API_KEY"] = config.api_key
+            elif "ANTHROPIC_API_KEY" not in env:
+                raise ValueError(
+                    "No API key available. Set ANTHROPIC_API_KEY environment variable "
+                    "or create .env file in project root."
+                )
 
             # US-001: Stream output instead of buffering
             # Use Popen with line buffering for cross-platform compatibility

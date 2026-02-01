@@ -53,13 +53,19 @@ class Config:
             if self._is_valid_api_key(self.api_key):
                 return
 
-        # Fall back to environment variable
+        # Fall back to environment variable (always check, even if files exist but had no valid key)
         env_key = os.environ.get("ANTHROPIC_API_KEY")
         if env_key:
             # Strip whitespace/newlines that may have been accidentally added
             cleaned_key = env_key.replace("\n", "").replace(" ", "").strip()
             if self._is_valid_api_key(cleaned_key):
                 self.api_key = cleaned_key
+                return
+
+        # Also try user-level config in ~/.swanson/config.json
+        user_config = Path.home() / ".swanson" / "config.json"
+        if user_config.exists():
+            self._load_config_json(user_config)
 
     def _load_env_file(self, env_path: Path) -> None:
         """Load API key from .env file."""
