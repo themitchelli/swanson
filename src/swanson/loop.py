@@ -6,6 +6,8 @@ Main orchestration loop for Swanson Framework.
 Works on macOS, Windows, and Linux.
 """
 
+import re
+import shutil
 import subprocess
 import sys
 import time
@@ -15,6 +17,52 @@ from swanson.config import config
 from swanson.executor import Executor
 from swanson.history_logger import HistoryLogger
 from swanson.state_manager import StateManager
+
+
+def _archive_test_files(prd_filename: str) -> None:
+    """
+    US-003: Archive test files when PRD is archived.
+
+    Moves test files associated with the PRD to tests/archive/ to prevent
+    ghost tests from contaminating future runs.
+
+    Args:
+        prd_filename: Name of the PRD file being archived
+    """
+    try:
+        # Load PRD to get story IDs
+        prd_path = Path("prds") / prd_filename
+        if not prd_path.exists():
+            return
+
+        import json
+
+        with open(prd_path, "r", encoding="utf-8") as f:
+            prd_data = json.load(f)
+
+        story_ids = [story["id"] for story in prd_data.get("userStories", [])]
+
+        # Create tests/archive directory if needed
+        tests_archive_dir = Path("tests") / "archive"
+        tests_archive_dir.mkdir(exist_ok=True)
+
+        # Move test files to archive
+        moved_count = 0
+        for story_id in story_ids:
+            test_file = Path("tests") / f"test_{story_id}.py"
+            if test_file.exists():
+                try:
+                    archive_file = tests_archive_dir / f"test_{story_id}.py"
+                    shutil.move(str(test_file), str(archive_file))
+                    moved_count += 1
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to archive test_{story_id}.py: {str(e)}")
+
+        if moved_count > 0:
+            print(f"   Archived {moved_count} test file(s) to tests/archive/")
+
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to archive test files: {str(e)}")
 
 
 def main():
@@ -69,6 +117,11 @@ def main():
         if not current_story:
             print(f"✓ All stories in {current_prd} complete.")
             print("Moving to next PRD...")
+
+            # US-003: Clean up test artifacts when archiving PRD
+            # Move test files to tests/archive/ to prevent ghost tests in future runs
+            _archive_test_files(current_prd)
+
             if not state.load_next_prd():
                 print("✓ Queue empty. All work complete.")
                 sys.exit(0)
@@ -87,7 +140,12 @@ def main():
         test_file = Path(f"tests/test_{current_story}.py")
         start_time = time.time()
 
-        if not test_file.exists():
+        # US-001: Always verify tests fail, even if tests already exist
+        # Determine if we need to generate tests or if they already exist
+        test_exists = test_file.exists()
+
+        if not test_exists:
+            # Generate new tests
             print(f"=== Test Generation: {current_story} ===")
             success, output = executor.execute_test_generation(prd_path, current_story)
 
@@ -104,36 +162,45 @@ def main():
                 )
                 sys.exit(1)
 
-            # Verify tests fail (feature doesn't exist yet)
-            print("\nVerifying tests fail (expected state)...")
-            result = subprocess.run(
-                ["pytest", str(test_file), "-v"],
-                capture_output=True,
-            )
-
-            if result.returncode == 0:
-                print(
-                    f"\n❌ BLOCKED: Tests passing before implementation (should fail)"
-                )
-                print("\nThis means tests are stubbed or feature already exists.")
-                print(result.stdout.decode())
-                history.log_block(
-                    current_story,
-                    current_prd,
-                    "Tests passing before implementation",
-                    session_num,
-                )
-                sys.exit(1)
-
-            print("✓ Tests generated and failing as expected\n")
-
-            # Log test generation
-            # Count test functions in file
+            # Count and log newly generated tests
             test_content = test_file.read_text()
             test_count = test_content.count("def test_")
             history.log_test_generation(
                 current_story, current_prd, test_count, session_num
             )
+            print(f"✓ Tests generated ({test_count} test functions)\n")
+        else:
+            # US-002: Log when reusing existing tests from previous run
+            test_content = test_file.read_text()
+            test_count = test_content.count("def test_")
+            print(f"ℹ️  Reusing existing tests from previous run ({test_count} test functions)")
+            print(
+                "   (To regenerate tests, delete tests/test_{}.py and rerun)\n".format(
+                    current_story
+                )
+            )
+
+        # US-001: Always verify tests fail before implementation
+        # This must run whether tests are newly generated or reused
+        print("Verifying tests fail (expected state)...")
+        result = subprocess.run(
+            ["pytest", str(test_file), "-v"],
+            capture_output=True,
+        )
+
+        if result.returncode == 0:
+            print(f"\n❌ BLOCKED: Tests passing before implementation (should fail)")
+            print("\nThis means tests are stubbed or feature already exists.")
+            print(result.stdout.decode())
+            history.log_block(
+                current_story,
+                current_prd,
+                "Tests passing before implementation",
+                session_num,
+            )
+            sys.exit(1)
+
+        print("✓ Tests verified as failing (ready for implementation)\n")
 
         # Phase 2: Implementation
         print(f"=== Implementation: {current_story} ===")
