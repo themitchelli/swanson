@@ -213,17 +213,13 @@ BLOCKED: <reason>
             # -p: pass prompt directly
             # --print: non-interactive output mode
             # --dangerously-skip-permissions: allow file writes for autonomous operation
-            # Environment for subprocess
-            # Let Claude Code use its own authentication (OAuth) by default.
-            # Only pass ANTHROPIC_API_KEY if it's a valid, non-empty value.
-            # DO NOT pass config.api_key from .env - it may be stale/invalid
-            # and would override Claude Code's working OAuth authentication.
+            # Let Claude Code handle its own authentication.
+            # It will use (in priority order):
+            #   1. ANTHROPIC_API_KEY env var (if set and valid)
+            #   2. OAuth tokens from macOS Keychain / Windows Credential Manager
+            #   3. ~/.claude.json credentials
+            # We just pass through the environment - no manipulation needed.
             env = os.environ.copy()
-
-            # Remove empty or invalid API key to let Claude Code use OAuth
-            shell_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not shell_key or not shell_key.startswith("sk-ant-"):
-                env.pop("ANTHROPIC_API_KEY", None)
 
             # US-001: Stream output instead of buffering
             # Use Popen with line buffering for cross-platform compatibility
