@@ -93,14 +93,12 @@ class Config:
         """
         Validate configuration.
 
-        Raises:
-            ValueError: If API key is missing or invalid.
+        Note: API key is optional - Claude Code can use OAuth authentication.
+        This validation now only warns about invalid key format if one is provided.
         """
-        if not self.api_key:
-            raise ValueError(
-                "API key not found. Please create .env or config.json with your API key.\n"
-                "Run: python setup.py for interactive setup."
-            )
+        # API key is optional - Claude Code can authenticate via OAuth
+        # Only validate format if a key is explicitly provided
+        pass
 
         if not self.api_key.startswith("sk-ant-"):
             raise ValueError(
