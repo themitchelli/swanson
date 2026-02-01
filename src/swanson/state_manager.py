@@ -6,10 +6,16 @@ Cross-platform compatible.
 """
 
 import json
+import logging
+import os
+import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class StateManager:
@@ -153,11 +159,168 @@ class StateManager:
 
         self._save_state()
 
+    def _verify_state_integrity(self) -> Tuple[bool, str]:
+        """
+        Verify that state.json has valid structure.
+
+        Returns:
+            Tuple of (is_valid, error_message)
+            is_valid: True if state is valid
+            error_message: Description of any issues found
+        """
+        try:
+            # Check required fields exist
+            if "current_prd" not in self.state:
+                return False, "Missing 'current_prd' field"
+            if "remaining_stories" not in self.state:
+                return False, "Missing 'remaining_stories' field"
+            if "completed_stories" not in self.state:
+                return False, "Missing 'completed_stories' field"
+
+            # Check field types
+            if not isinstance(self.state.get("remaining_stories"), list):
+                return False, "'remaining_stories' is not a list"
+            if not isinstance(self.state.get("completed_stories"), list):
+                return False, "'completed_stories' is not a list"
+
+            return True, ""
+        except Exception as e:
+            return False, f"State validation error: {str(e)}"
+
+    def _verify_completion(self, prd_path: Path) -> Tuple[bool, str]:
+        """
+        Verify that PRD has all stories completed.
+
+        Checks:
+        1. remaining_stories list is empty
+        2. All stories from PRD are in completed_stories
+
+        Args:
+            prd_path: Path to the PRD file
+
+        Returns:
+            Tuple of (is_complete, error_message)
+            is_complete: True if all stories are complete
+            error_message: Description of any issues found
+        """
+        try:
+            # Check remaining_stories is empty
+            remaining = self.state.get("remaining_stories", [])
+            if remaining:
+                return False, f"PRD has {len(remaining)} incomplete stories: {remaining}"
+
+            # Load PRD to verify all stories are in completed list
+            if not prd_path.exists():
+                return False, f"PRD file not found: {prd_path}"
+
+            with open(prd_path, "r", encoding="utf-8") as f:
+                prd_data = json.load(f)
+
+            prd_stories = [story["id"] for story in prd_data.get("userStories", [])]
+            completed = self.state.get("completed_stories", [])
+
+            # Verify all PRD stories are completed
+            for story_id in prd_stories:
+                if story_id not in completed:
+                    return (
+                        False,
+                        f"Story {story_id} not in completed_stories",
+                    )
+
+            return True, ""
+        except json.JSONDecodeError as e:
+            return False, f"PRD file is not valid JSON: {str(e)}"
+        except Exception as e:
+            return False, f"Completion verification error: {str(e)}"
+
+    def _archive_prd_atomic(
+        self, prd_path: Path, archive_dir: Path
+    ) -> Tuple[bool, str]:
+        """
+        Archive PRD file atomically with backup and rollback.
+
+        Steps:
+        1. Verify archive directory is writable
+        2. Copy PRD to archive (backup)
+        3. Verify copy succeeded
+        4. Delete original only after verification
+        5. Rollback on any failure
+
+        Args:
+            prd_path: Source PRD file path
+            archive_dir: Destination archive directory
+
+        Returns:
+            Tuple of (success, error_message)
+            success: True if archiving succeeded
+            error_message: Description of any errors
+        """
+        try:
+            # Verify source exists
+            if not prd_path.exists():
+                return False, f"Source PRD not found: {prd_path}"
+
+            # Verify archive directory exists and is writable
+            try:
+                archive_dir.mkdir(exist_ok=True)
+            except Exception as e:
+                return False, f"Cannot create archive directory: {str(e)}"
+
+            # Verify archive directory is writable
+            if not os.access(archive_dir, os.W_OK):
+                return False, f"Archive directory is not writable: {archive_dir}"
+
+            archive_path = archive_dir / prd_path.name
+
+            # Copy to archive first (don't move yet)
+            try:
+                shutil.copy2(prd_path, archive_path)
+            except Exception as e:
+                return False, f"Failed to copy to archive: {str(e)}"
+
+            # Verify copy succeeded
+            if not archive_path.exists():
+                return False, "Archive copy verification failed"
+
+            # Verify copy is identical
+            try:
+                source_size = prd_path.stat().st_size
+                archive_size = archive_path.stat().st_size
+                if source_size != archive_size:
+                    archive_path.unlink()  # Rollback
+                    return (
+                        False,
+                        f"Archive copy size mismatch: {source_size} != {archive_size}",
+                    )
+            except Exception as e:
+                archive_path.unlink()  # Rollback
+                return False, f"Archive verification failed: {str(e)}"
+
+            # Only delete original after successful copy verification
+            try:
+                prd_path.unlink()
+            except Exception as e:
+                # Rollback: delete the archive copy
+                try:
+                    archive_path.unlink()
+                except Exception:
+                    pass
+                return False, f"Failed to delete original after archiving: {str(e)}"
+
+            return True, ""
+        except Exception as e:
+            return False, f"Atomic archive operation failed: {str(e)}"
+
     def load_next_prd(self, prds_dir: Path = Path("prds")) -> bool:
         """
         Load next PRD from queue.
 
-        Archives current PRD and loads next one from prds/ directory.
+        Archives current PRD (with safety checks) and loads next one from prds/ directory.
+
+        Safety checks before archiving:
+        1. Verify state.json integrity
+        2. Verify all stories in current PRD are completed
+        3. Archive atomically with backup and rollback
 
         Args:
             prds_dir: Directory containing PRD files.
@@ -165,15 +328,37 @@ class StateManager:
         Returns:
             True if next PRD loaded, False if queue is empty.
         """
-        # Archive current PRD if it exists
+        # US-001: Verify state integrity before archiving
         current_prd = self.state.get("current_prd")
         if current_prd:
-            archive_dir = prds_dir / "archive"
-            archive_dir.mkdir(exist_ok=True)
+            # Verify state.json structure
+            is_valid, validation_error = self._verify_state_integrity()
+            if not is_valid:
+                logger.warning(f"Skipping archive: {validation_error}")
+                # Don't archive if state is corrupted
+            else:
+                # US-001: Verify all stories are completed
+                current_prd_path = prds_dir / current_prd
+                is_complete, completion_error = self._verify_completion(current_prd_path)
 
-            current_prd_path = prds_dir / current_prd
-            if current_prd_path.exists():
-                current_prd_path.rename(archive_dir / current_prd)
+                if not is_complete:
+                    logger.warning(
+                        f"Cannot archive {current_prd}: {completion_error}. "
+                        "PRD has incomplete stories. Skipping archive to preserve work."
+                    )
+                    # Don't archive incomplete PRDs
+                else:
+                    # US-002: Archive atomically with backup and rollback
+                    archive_dir = prds_dir / "archive"
+                    success, archive_error = self._archive_prd_atomic(
+                        current_prd_path, archive_dir
+                    )
+
+                    if not success:
+                        logger.warning(f"Failed to archive {current_prd}: {archive_error}")
+                        # Continue loading next PRD even if archiving failed
+                    else:
+                        logger.info(f"Successfully archived {current_prd}")
 
         # Find next PRD (sorted by filename)
         prd_files = sorted(prds_dir.glob("*.json"))
@@ -188,8 +373,15 @@ class StateManager:
 
         # Load next PRD
         next_prd = prd_files[0]
-        with open(next_prd, "r", encoding="utf-8") as f:
-            prd_data = json.load(f)
+        try:
+            with open(next_prd, "r", encoding="utf-8") as f:
+                prd_data = json.load(f)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to load PRD {next_prd.name}: invalid JSON: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to load PRD {next_prd.name}: {str(e)}")
+            return False
 
         # Extract story IDs
         story_ids = [story["id"] for story in prd_data.get("userStories", [])]
