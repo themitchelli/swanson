@@ -22,7 +22,7 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from executor import build_claude_command, execute_claude_prompt
+from swanson.executor import build_claude_command, execute_claude_prompt
 
 
 class TestBuildClaudeCommand:

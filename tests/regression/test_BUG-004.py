@@ -15,7 +15,7 @@ from pathlib import Path
 
 # Import functions that will be added to loop.py for argument parsing
 # These imports will FAIL until the implementation is added
-from loop import parse_arguments, setup_argument_parser
+from swanson.loop import parse_arguments, setup_argument_parser
 
 
 class TestArgumentParsing:

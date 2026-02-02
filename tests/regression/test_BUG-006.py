@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Import functions that will be added to executor.py
 # These imports will FAIL until the implementation is added
-from executor import _find_claude_executable
+from swanson.executor import _find_claude_executable
 
 
 class TestClaudeExecutableFinder:

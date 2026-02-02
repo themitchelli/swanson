@@ -16,7 +16,7 @@ import subprocess
 from pathlib import Path
 
 # Import the real module - tests MUST fail until implementation exists
-from loop import (
+from swanson.loop import (
     run_regression_tests,
     execute_story_with_regression,
     attempt_regression_fix,
@@ -442,7 +442,7 @@ class TestRegressionFailureIncludesStoryContext:
         failing_test = "test_BUG-001.py::test_interactive_mode"
 
         # This would be a helper function to format error messages
-        from loop import get_regression_failure_context
+        from swanson.loop import get_regression_failure_context
 
         # Act
         context = get_regression_failure_context(story_id, failing_test)

@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch, MagicMock, call
 import subprocess
 
 # Import the real module - tests MUST fail until implementation exists
-from loop import (
+from swanson.loop import (
     attempt_fix_with_context,
     attempt_regression_fix,
     execute_story_loop,

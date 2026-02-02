@@ -16,7 +16,7 @@ from unittest.mock import patch, MagicMock, call
 import logging
 
 # Import the function under test (will fail until implemented)
-from loop import move_test_to_regression
+from swanson.loop import move_test_to_regression
 
 
 class TestMoveTestToRegressionBasic:
