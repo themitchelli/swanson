@@ -145,7 +145,34 @@ Your task:
 4. Follow AAA pattern (Arrange, Act, Assert)
 5. Include NFR tests (performance, security, etc.)
 6. Do NOT implement any features
-7. Do NOT stub tests - all tests must have real assertions
+
+CRITICAL TEST REQUIREMENTS:
+- Tests MUST import and test the REAL module (e.g., `from setup import is_interactive`)
+- Tests MUST FAIL when run because the implementation doesn't exist yet
+- Do NOT create self-contained tests that mock everything inline
+- Do NOT define the functions being tested inside the test file
+- Mocking is allowed for external dependencies (stdin, env vars, file system)
+- But the function under test MUST be imported from the real module
+- If a test passes without the implementation existing, it's WRONG
+
+Example of WRONG (self-contained mock):
+```python
+def test_something():
+    def fake_function():  # BAD: defined inline
+        return True
+    assert fake_function() is True
+```
+
+Example of CORRECT (imports real module):
+```python
+from setup import is_interactive  # GOOD: imports real function
+
+def test_is_interactive_returns_true_for_tty():
+    with patch('sys.stdin') as mock_stdin:
+        mock_stdin.isatty.return_value = True
+        result = is_interactive()  # Tests REAL function
+    assert result is True
+```
 
 When complete, output exactly:
 TESTS_GENERATED: {story_id}
