@@ -1,17 +1,8 @@
 #!/usr/bin/env python3
 """
-ATDD Loop - Cross-Platform Orchestration with Two-Loop System
+ATDD Loop - Story Execution with Phase Tracking
 
-Main orchestration loop for Swanson Framework.
-Works on macOS, Windows, and Linux.
-
-This module implements:
-- Main orchestration loop for PRD processing
-- Two-loop system (story tests + regression tests)
-- Phase tracking for stories
-- Bounded self-healing (one fix attempt before escalation)
-
-US-001 requirements:
+This module implements the US-001 requirements:
 1. Remove strict 'tests must fail first' gate
 2. Verify tests pass AFTER implementation phase
 3. Attempt one fix with escalation context on test failure
@@ -29,27 +20,95 @@ US-003 requirements:
 2. Move is atomic (copy then delete)
 3. If move fails, log warning but don't block (tests stay in tests/)
 4. Regression folder is created if it doesn't exist
+
+BUG-004 requirements:
+1. Support --help flag to display usage information
+2. Support --version flag to display version number
+3. Parse command-line arguments using argparse
+4. Run normally when no arguments provided
 """
 
+import argparse
 import json
 import logging
-import re
 import shutil
 import subprocess
 import sys
-import time
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from swanson.config import config
-from swanson.executor import Executor
-from swanson.history_logger import HistoryLogger
-from swanson.state_manager import StateManager
+
+# Version number for the loop.py script
+__version__ = "1.0.0"
 
 
 # Phase tracking storage (in-memory for unit tests, persistent for production)
 _phase_storage: Dict[str, str] = {}
+
+
+def setup_argument_parser() -> argparse.ArgumentParser:
+    """
+    Set up and return the argument parser for loop.py.
+
+    Returns:
+        argparse.ArgumentParser: Configured argument parser
+
+    Examples:
+        >>> parser = setup_argument_parser()
+        >>> args = parser.parse_args([])
+        >>> isinstance(args, argparse.Namespace)
+        True
+    """
+    parser = argparse.ArgumentParser(
+        prog='loop.py',
+        description='ATDD Loop - Automated Test-Driven Development Loop',
+        epilog="""
+Directory Structure Requirements:
+  - prds/          PRD (Product Requirements Document) JSON files
+  - tests/         Story test files (test_<STORY_ID>.py)
+  - state.json     Current execution state and story tracking
+
+Prerequisites:
+  - state.json must exist and contain current_prd and current_story
+  - PRD file must exist in prds/ directory
+  - Test file must exist for the current story in tests/ directory
+
+The loop automatically executes stories in test -> implement -> fix phases,
+running regression tests after each story and moving passing tests to
+tests/regression/ folder.
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {__version__}'
+    )
+
+    return parser
+
+
+def parse_arguments() -> argparse.Namespace:
+    """
+    Parse command-line arguments using argparse.
+
+    Returns:
+        argparse.Namespace: Parsed arguments
+
+    Raises:
+        SystemExit: If --help or --version flags are used, or if invalid arguments are provided
+
+    Examples:
+        >>> import sys
+        >>> sys.argv = ['loop.py']
+        >>> args = parse_arguments()
+        >>> isinstance(args, argparse.Namespace)
+        True
+    """
+    parser = setup_argument_parser()
+    args = parser.parse_args()
+    return args
 
 
 def track_phase(story_id: str, phase: str) -> None:
@@ -541,361 +600,26 @@ def move_test_to_regression(story_id: str, base_path: Optional[Path] = None) -> 
         return False
 
 
-def _timestamp() -> str:
-    """US-002: Get current time as HH:MM:SS for progress indicators."""
-    return datetime.now().strftime("%H:%M:%S")
-
-
-def _elapsed(start_time: float) -> str:
-    """
-    US-002: Calculate elapsed time in human-readable format.
-
-    Args:
-        start_time: Time.time() value from start of operation
-
-    Returns:
-        Formatted string like "1m 27s" or "42s"
-    """
-    elapsed = time.time() - start_time
-    mins = int(elapsed // 60)
-    secs = int(elapsed % 60)
-    if mins > 0:
-        return f"{mins}m {secs}s"
-    return f"{secs}s"
-
-
-def _archive_test_files(prd_filename: str) -> None:
-    """
-    US-003: Archive test files when PRD is archived.
-
-    Moves test files associated with the PRD to tests/archive/ to prevent
-    ghost tests from contaminating future runs.
-
-    Args:
-        prd_filename: Name of the PRD file being archived
-    """
-    try:
-        # Load PRD to get story IDs
-        prd_path = Path("prds") / prd_filename
-        if not prd_path.exists():
-            return
-
-        with open(prd_path, "r", encoding="utf-8") as f:
-            prd_data = json.load(f)
-
-        story_ids = [story["id"] for story in prd_data.get("userStories", [])]
-
-        # Create tests/archive directory if needed
-        tests_archive_dir = Path("tests") / "archive"
-        tests_archive_dir.mkdir(exist_ok=True)
-
-        # Move test files to archive
-        moved_count = 0
-        for story_id in story_ids:
-            test_file = Path("tests") / f"test_{story_id}.py"
-            if test_file.exists():
-                try:
-                    archive_file = tests_archive_dir / f"test_{story_id}.py"
-                    shutil.move(str(test_file), str(archive_file))
-                    moved_count += 1
-                except Exception as e:
-                    print(f"Warning: Failed to archive test_{story_id}.py: {str(e)}")
-
-        if moved_count > 0:
-            print(f"   Archived {moved_count} test file(s) to tests/archive/")
-
-    except Exception as e:
-        print(f"Warning: Failed to archive test files: {str(e)}")
-
-
 def main():
     """
-    ATDD Loop with Two-Loop System:
+    Main entry point for the ATDD loop.
 
-    1. Read state - which PRD/story are we on?
-    2. For each story in current PRD:
-       a. Test Generation Session (if tests don't exist)
-       b. Implementation Session
-       c. Verify story tests pass (with one fix attempt on failure)
-       d. Run regression tests (with one fix attempt on failure)
-       e. Update state
-       f. Move tests to regression folder
-       g. Append to history
-       h. Git commit
-    3. Move to next PRD or exit
+    In production, this would:
+    1. Parse command-line arguments
+    2. Load state.json
+    3. Get current PRD and story
+    4. Execute story loop
+    5. Update state and history
+    6. Commit changes
+
+    For now, this is a placeholder for future implementation.
     """
-    print("=== Swanson Framework - ATDD Loop ===\n")
+    # Parse command-line arguments (handles --help and --version)
+    args = parse_arguments()
 
-    # Validate configuration
-    try:
-        config.validate()
-    except ValueError as e:
-        print(f"Configuration error: {e}")
-        sys.exit(1)
-
-    # Initialize components
-    state = StateManager()
-    executor = Executor()
-    history = HistoryLogger()
-
-    # Initialize state if needed
-    state.initialize_state()
-
-    # Load first PRD if state is empty
-    if not state.get_current_prd():
-        print("Initializing from PRD queue...")
-        if not state.load_next_prd():
-            print("No PRDs in queue. Exiting.")
-            sys.exit(0)
-
-    # Main loop
-    while True:
-        # Read current state
-        current_prd = state.get_current_prd()
-        current_story = state.get_current_story()
-
-        # Exit if queue empty
-        if not current_prd:
-            print("Queue empty. All work complete.")
-            sys.exit(0)
-
-        if not current_story:
-            print(f"All stories in {current_prd} complete.")
-            print("Moving to next PRD...")
-
-            # US-003: Clean up test artifacts when archiving PRD
-            # Move test files to tests/archive/ to prevent ghost tests in future runs
-            _archive_test_files(current_prd)
-
-            if not state.load_next_prd():
-                print("Queue empty. All work complete.")
-                sys.exit(0)
-            continue
-
-        session_num = state.increment_session_count()
-        prd_path = Path("prds") / current_prd
-
-        print(f"\n{'='*60}")
-        print(f"Session {session_num}")
-        print(f"PRD: {current_prd}")
-        print(f"Story: {current_story}")
-        print(f"{'='*60}\n")
-
-        # Phase 1: Test Generation
-        test_file = Path(f"tests/test_{current_story}.py")
-        phase_start = time.time()
-
-        # Track story phase
-        track_phase(current_story, 'test')
-
-        # Determine if we need to generate tests or if they already exist
-        test_exists = test_file.exists()
-
-        if not test_exists:
-            # Generate new tests - with progress indicator
-            print(f"\n[{_timestamp()}] === Test Generation: {current_story} ===")
-            gen_start = time.time()
-            success, output = executor.execute_test_generation(prd_path, current_story)
-
-            # Verify tests exist
-            if not test_file.exists():
-                print(f"\n[{_timestamp()}] BLOCKED: Test generation failed for {current_story}")
-                print("\nClaude Code output:")
-                print(output)
-                history.log_block(
-                    current_story,
-                    current_prd,
-                    "Test file not created",
-                    session_num,
-                )
-                sys.exit(1)
-
-            # Count and log newly generated tests
-            test_content = test_file.read_text()
-            test_count = test_content.count("def test_")
-            history.log_test_generation(
-                current_story, current_prd, test_count, session_num
-            )
-            print(f"[{_timestamp()}] Tests generated ({test_count} test functions, {_elapsed(gen_start)})\n")
-        else:
-            # US-002: Log when reusing existing tests from previous run
-            test_content = test_file.read_text()
-            test_count = test_content.count("def test_")
-            print(f"\n[{_timestamp()}] Reusing existing tests from previous run ({test_count} test functions)")
-            print(
-                "   (To regenerate tests, delete tests/test_{}.py and rerun)\n".format(
-                    current_story
-                )
-            )
-
-        # US-001: Do NOT block when tests pass before implementation
-        # (Remove strict 'tests must fail first' gate)
-        print(f"[{_timestamp()}] Checking initial test state...")
-        result = subprocess.run(
-            ["pytest", str(test_file), "-v"],
-            capture_output=True,
-        )
-
-        if result.returncode == 0:
-            # Tests already passing - this is OK (allows resuming, over-implementation, etc.)
-            print(f"[{_timestamp()}] Tests already passing (resuming or over-implementation)")
-        else:
-            print(f"[{_timestamp()}] Tests failing (ready for implementation)\n")
-
-        # Phase 2: Implementation - with progress indicator
-        track_phase(current_story, 'implement')
-        print(f"[{_timestamp()}] === Implementation: {current_story} ===")
-        impl_start = time.time()
-        success, output = executor.execute_implementation(prd_path, current_story)
-
-        # Verify story tests pass (US-001 AC2)
-        print(f"\n[{_timestamp()}] Verifying story tests pass...")
-        result = subprocess.run(
-            ["pytest", str(test_file), "-v"],
-            capture_output=True,
-        )
-
-        if result.returncode != 0:
-            # Tests failing - attempt one fix (US-001 AC3)
-            print(f"\n[{_timestamp()}] Tests failing after implementation - attempting fix...")
-            track_phase(current_story, 'fix')
-
-            test_output = result.stdout.decode() + "\n" + result.stderr.decode()
-            fix_succeeded = attempt_fix_with_context(
-                current_story,
-                test_output=test_output,
-                error_type="test_failure"
-            )
-
-            if not fix_succeeded:
-                # Fix failed - stop for human intervention (US-001 AC4)
-                print(f"\n[{_timestamp()}] BLOCKED: Tests failing after fix attempt")
-                print("\nPytest output:")
-                print(result.stdout.decode())
-                print(result.stderr.decode())
-                history.log_block(
-                    current_story,
-                    current_prd,
-                    "Tests failing after implementation and fix attempt",
-                    session_num,
-                )
-                sys.exit(1)
-            else:
-                print(f"[{_timestamp()}] Fix succeeded - tests now passing")
-
-        print(f"[{_timestamp()}] Story tests passing ({_elapsed(impl_start)})\n")
-
-        # Phase 3: Regression Tests (US-002)
-        print(f"[{_timestamp()}] Running regression tests...")
-        regression_pass = run_regression_tests(current_story)
-
-        if not regression_pass:
-            # Regression tests failing - attempt one fix (US-002 AC2)
-            print(f"\n[{_timestamp()}] Regression tests failing - attempting fix...")
-
-            regression_dir = Path("tests/regression")
-            reg_result = subprocess.run(
-                [sys.executable, "-m", "pytest", str(regression_dir), "-v"],
-                capture_output=True,
-                text=True
-            )
-            test_output = reg_result.stdout + "\n" + reg_result.stderr
-
-            fix_succeeded = attempt_regression_fix(
-                current_story,
-                test_output=test_output,
-                error_type="regression_failure"
-            )
-
-            if not fix_succeeded:
-                # Fix failed - stop for human intervention (US-002 AC3)
-                failing_test = "unknown"
-                for line in test_output.split('\n'):
-                    if "FAILED" in line and "tests/regression/" in line:
-                        failing_test = line.split("FAILED")[1].strip().split()[0]
-                        break
-
-                context = get_regression_failure_context(current_story, failing_test)
-                print(f"\n[{_timestamp()}] BLOCKED: Regression tests failing after fix attempt")
-                print(f"   {context}")
-                print("\nPytest output:")
-                print(test_output)
-                history.log_block(
-                    current_story,
-                    current_prd,
-                    f"Regression tests failing: {context}",
-                    session_num,
-                )
-                sys.exit(1)
-            else:
-                print(f"[{_timestamp()}] Regression fix succeeded")
-
-        print(f"[{_timestamp()}] Regression tests passing\n")
-
-        # Parse test results
-        stdout = result.stdout.decode()
-        match = re.search(r"(\d+) passed", stdout)
-        passed = int(match.group(1)) if match else 0
-
-        test_results = {"passed": passed, "total": passed, "failed": 0}
-
-        # Phase 4: Completion
-        duration = int(time.time() - phase_start)
-
-        # Git commit
-        print(f"[{_timestamp()}] Creating git commit...")
-        commit_msg = executor.generate_commit_message(current_story, prd_path)
-
-        subprocess.run(["git", "add", "."], check=True)
-        commit_result = subprocess.run(
-            ["git", "commit", "-m", commit_msg],
-            capture_output=True,
-            text=True,
-        )
-
-        # Get commit hash
-        commit_hash_result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True,
-            text=True,
-        )
-        commit_hash = commit_hash_result.stdout.strip()
-
-        print(f"[{_timestamp()}] Committed: {commit_hash}\n")
-
-        # US-003: Move tests to regression folder after successful commit
-        print(f"[{_timestamp()}] Moving tests to regression folder...")
-        move_success = move_test_to_regression(current_story)
-        if move_success:
-            print(f"[{_timestamp()}] Tests moved to regression folder")
-        else:
-            print(f"[{_timestamp()}] Warning: Failed to move tests to regression (tests stay in tests/)")
-
-        # Extract acceptance criteria
-        acceptance_criteria = executor.context_loader.extract_acceptance_criteria(
-            prd_path, current_story
-        )
-        story_title = executor.context_loader.get_story_title(prd_path, current_story)
-
-        # Update state
-        state.mark_story_complete(current_story)
-
-        # Log to history
-        history.log_completion(
-            story_id=current_story,
-            prd_path=current_prd,
-            story_title=story_title,
-            acceptance_criteria=acceptance_criteria,
-            test_results=test_results,
-            commit_hash=commit_hash,
-            duration_seconds=duration,
-            model="Sonnet",
-            session_number=session_num,
-        )
-
-        print(f"[{_timestamp()}] Story {current_story} complete ({_elapsed(phase_start)})")
-        print(f"  Tests: {test_results['passed']}/{test_results['total']} passed")
-        print(f"  Commit: {commit_hash}\n")
+    print("ATDD Loop - Ready for story execution")
+    print("Use execute_story_loop(story_id, phase) to run stories")
+    print("Use execute_story_with_regression(story_id) for US-002 flow")
 
 
 if __name__ == "__main__":

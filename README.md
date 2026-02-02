@@ -1,229 +1,205 @@
 # Swanson Framework
 
-**"Never half-ass two things. Whole-ass one thing."** - Ron Swanson
+**Autonomous development framework for organizational transformation through quality-enforced code execution.**
 
-Cross-platform autonomous development framework. Works on macOS, Windows, and Linux.
+> "Never half-ass two things. Whole-ass one thing." - Ron Swanson
 
-Built on principles of quality craftsmanship, standards enforcement, and reliable overnight execution.
+## What Is Swanson?
 
-## Requirements
+Swanson is NOT a coding assistant. It's a framework for systematic codebase transformation through Acceptance Test-Driven Development (ATDD).
+
+**The Problem:** Most AI coding tools multiply developer output (good OR bad). A bad developer with 10x productivity = 10x liability.
+
+**Swanson's Solution:** Standards enforcement + external test validation = Quality multiplier, not chaos multiplier.
+
+### How It Works
+
+1. **Queue-driven execution** - PRDs in `prds/queue/`, processed sequentially
+2. **Test-first enforcement** - Acceptance criteria → tests → implementation
+3. **External validation** - Tests generated and verified in separate sessions (prevents AI from falsifying results)
+4. **Standards compliance** - Organizational coding standards loaded every session
+5. **Predictable cost** - ~$0.14 per user story (Sonnet 4.5)
+
+### The Vision: Brownfield Rescue
+
+The killer use case (Phase 1, future):
+- Audit existing codebase, identify anti-patterns
+- Document "good" in `standards.md`
+- Create 20-30 tech-debt PRDs (systematic cleanup)
+- Queue them, run overnight (~$4-7 total)
+- Wake to transformed codebase (brownfield → silver standard)
+
+**v1 doesn't build this yet, but the architecture supports it.**
+
+## Installation
+
+### Prerequisites
 - Python 3.12+
-- Claude Code CLI
-- pytest
-- git
-- Windows 11+ (Windows) or macOS 13+ (macOS)
+- Claude Code CLI (`npm install -g @anthropic-ai/claude-code`)
+- Anthropic API key or Claude Code OAuth
 
-## Usage
-
-### First-Time Setup (Required)
-
-Run the interactive setup script:
+### Install Swanson
 
 ```bash
-python setup.py
+pip install swanson
 ```
 
-This will:
-1. Ask for your Anthropic API key
-2. Create configuration files
-3. Validate your setup
-
-**OR** manually create one of these files:
-
-#### Option 1: .env file (Recommended)
+Or from source:
 ```bash
-# Copy template
-cp .env.template .env
-
-# Edit .env and add your API key
-# (Use notepad on Windows, nano/vim on macOS/Linux)
+git clone https://github.com/themitchelli/swanson.git
+cd swanson
+pip install -e .
 ```
 
-#### Option 2: config.json
-```bash
-# Copy template
-cp config.example.json config.json
-
-# Edit config.json and add your API key
-# (Use notepad on Windows, nano/vim on macOS/Linux)
-```
-
-### Initialize Your Project
+### Initialize a Project
 
 ```bash
-# From your project directory
-python /path/to/swanson/init.py
+cd your-project
+swanson init
 ```
 
-This creates `.swanson/` directory with configuration templates.
+This creates:
+- `.swanson/` - Configuration directory
+- `.swanson/templates/` - Customizable contract documents
+- `prds/queue/` - Work queue directory
 
-### Run
+### Configure
 
-```bash
-# Cross-platform
-python src/swanson/loop.py
-```
-
-### Check Status
-
-```bash
-# View current state
-cat state.json        # macOS/Linux
-type state.json       # Windows
-
-# View history
-tail -50 history.md   # macOS/Linux
-Get-Content history.md -Tail 50  # Windows (PowerShell)
-
-# View queue
-ls prds/              # macOS/Linux
-dir prds\             # Windows
-```
-
-### Verify Setup
-
-```bash
-python -c "from src.swanson.config import config; config.validate(); print('✓ Config valid')"
-```
-
-### Getting Your API Key
-
-1. Go to https://console.anthropic.com/settings/keys
-2. Create a new API key
-3. Copy the key (starts with `sk-ant-`)
-4. Paste it into `.env` or `config.json`
-
-**Important:** Never commit your API key to git. Both `.env` and `config.json` are gitignored.
-
-## Architecture
-
-The Swanson Framework separates concerns:
-
-**Framework Repo (swanson):**
-- Core execution loop
-- ATDD enforcement
-- Standards loading
-- Default templates
-
-**Your Project:**
-- `.swanson/` - Customized standards, vision
-- `prds/` - Your work queue
-- `src/` - Generated code
-- `tests/` - Generated tests
-
-See context-map.md for document structure and reading order.
-
-## Philosophy
-
-**Quality Over Speed:**
-Swanson enforces standards and validates with real tests. Code must be right the first time.
-
-**Autonomous Execution:**
-Queue PRDs before bed, wake up to working software with passing tests.
-
-**Brownfield Ready:**
-Unlike tools that multiply chaos, Swanson transforms brownfield codebases through systematic tech debt cleanup.
-
-## Platform Notes
-- Uses Python for cross-platform compatibility
-- Tested on macOS and Windows
-- File paths use pathlib for platform independence
-
-## How It Works
-
-### ATDD Flow
-
-```
-Story → Test Generation → Verify Tests Fail → Implementation → Verify Tests Pass → Complete
-```
-
-### Test Generation Phase
-1. Loads PRD and acceptance criteria
-2. Generates pytest tests (one per AC minimum)
-3. Verifies tests fail (expected state)
-4. Blocks if tests pass (means they're stubbed)
-
-### Implementation Phase
-1. Loads tests and standards
-2. Implements features to pass tests
-3. Verifies all tests pass
-4. Blocks if tests fail
-
-### Completion Phase
-1. Updates state.json
-2. Appends to history.md
-3. Creates git commit
-4. Moves to next story
-
-## Example PRD
-
-Create `prds/001-FEAT-health-check.json`:
-
+Edit `.swanson/config.json`:
 ```json
 {
+  "model": "claude-sonnet-4-20250514",
+  "max_retries": 3,
+  "test_timeout": 300,
+  "project_root": "."
+}
+```
+
+## Quick Start
+
+### 1. Create a PRD
+
+Create `prds/queue/example.json`:
+```json
+{
+  "id": "FEAT-001",
+  "title": "Add user authentication",
   "type": "feature",
-  "name": "Health Check Endpoint",
-  "description": "Add a health check endpoint for monitoring",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Basic Health Check",
-      "description": "GET /health returns 200 OK",
+      "title": "User can register with email/password",
       "acceptanceCriteria": [
-        "GET /health returns 200 status code",
-        "Response body contains {\"status\": \"healthy\"}",
-        "Response time is under 100ms"
-      ],
-      "priority": 1,
-      "complexity": "simple"
+        "Registration endpoint accepts email and password",
+        "Password is hashed with bcrypt (cost factor 12)",
+        "Valid registration returns 201 Created with user ID",
+        "Duplicate email returns 409 Conflict"
+      ]
     }
   ]
 }
 ```
 
-Then run:
+### 2. Run Swanson
+
 ```bash
-python src/swanson/loop.py
+swanson run
 ```
 
 Swanson will:
-1. Generate tests for US-001
-2. Verify tests fail
-3. Implement the feature
-4. Verify tests pass
-5. Commit the code
-6. Log to history
+1. Pick `example.json` from queue
+2. Generate tests from acceptance criteria
+3. Verify tests fail (feature doesn't exist)
+4. Implement feature to pass tests
+5. Verify tests pass
+6. Move PRD to `prds/completed/`
+7. Update `state.json` and `history.md`
 
-## Troubleshooting
+### 3. Review Output
 
-### "API key not found"
-- Make sure you created `.env` or `config.json`
-- Verify your API key starts with `sk-ant-`
-- Run `python setup.py` for interactive setup
+- **Tests:** Generated in your test directory
+- **Code:** Implemented in your source directory
+- **History:** Audit trail in `history.md`
+- **State:** Current execution state in `state.json`
 
-### "BLOCKED: Test generation failed"
-- Check that acceptance criteria are clear
-- Verify PRD follows schema (see `.swanson/prd-schema.md`)
-- Review Claude Code output for errors
+## Platform Support
 
-### "Tests passing before implementation"
-- Tests are stubbed (no real assertions)
-- Feature already exists in codebase
-- Review test file and fix assertions
+- **macOS:** Fully tested
+- **Windows:** Validated via CI, not manually tested
+- **Linux:** Should work (not tested)
 
-### "Tests failing after implementation"
-- Review pytest output
-- Check standards compliance
-- Verify all acceptance criteria addressed
+Cross-platform support via Python 3.12+ and pathlib.
 
-## Contributing
+## Project Structure
 
-Swanson follows its own philosophy: never half-ass two things. If you want to contribute, whole-ass one thing at a time.
+```
+your-project/
+├── .swanson/
+│   ├── config.json           # Configuration
+│   └── templates/            # Contract documents
+│       ├── product-vision.md
+│       ├── standards.md
+│       ├── context-map.md
+│       ├── prd-schema.md
+│       └── BUILD.md
+├── prds/
+│   ├── queue/                # Work to do
+│   ├── completed/            # Finished work
+│   └── expedite/             # Urgent items (future)
+├── state.json                # Execution state
+└── history.md                # Audit trail
+```
 
-## License
+## Development
 
-MIT
+### Running Tests
+
+```bash
+pytest tests/ -v
+```
+
+### Contributing
+
+This is a personal project (for now). If you want to contribute:
+1. Fork the repo
+2. Create a feature branch
+3. Submit a PR with clear description
+
+### License
+
+MIT License - See LICENSE file
+
+## FAQ
+
+**Q: Why ATDD? Why not just let AI write code?**
+A: Because AI will happily write tests that pass for broken code. External validation (separate sessions) prevents this.
+
+**Q: Why so slow? One story takes ~5 minutes.**
+A: We're optimizing for organizational transformation, not developer speed. Slower to execute, faster to production-quality code (no rework cycles).
+
+**Q: What if a test fails?**
+A: Swanson stops, shows the failure details, and waits. You fix the PRD or standards, then resume. Fail loudly > silent corruption.
+
+**Q: Can I use this for greenfield projects?**
+A: Yes, but the real value is brownfield rescue (Phase 1). Systematic tech debt cleanup is the killer use case.
+
+**Q: What's the cost?**
+A: ~$0.14 per user story (Sonnet 4.5). Predictable and measurable.
+
+## Roadmap
+
+- **v1 (current):** Core loop, ATDD enforcement, cross-platform support
+- **v2:** Cost optimization (Haiku for tests, Sonnet for implementation)
+- **Phase 1:** Brownfield rescue mode (systematic tech debt cleanup)
+- **Phase 2:** Enterprise integrations (JIRA, Azure DevOps, Slack)
+- **Phase 3:** Multi-repo orchestration
 
 ## Credits
 
-Named after Ron Swanson, Director of the Pawnee Parks and Recreation Department, who believed in quality craftsmanship and doing things right the first time.
+Built by Steve Mitchelli ([@themitchelli](https://github.com/themitchelli))
+
+Inspired by FADE and MADeIT (RIP). Powered by Claude Code and Anthropic API.
+
+---
+
+**"Never half-ass two things. Whole-ass one thing."** - Ron Swanson
