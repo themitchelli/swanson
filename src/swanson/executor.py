@@ -189,13 +189,16 @@ BLOCKED: <reason>
 
     def _execute_claude_code(self, prompt: str) -> str:
         """
-        Execute Claude Code with given prompt.
+        Execute Claude Code with given prompt, streaming output in real-time.
+
+        US-001: Stream output line-by-line instead of buffering entire response.
+        This prevents the appearance of the system "hanging" during execution.
 
         Args:
             prompt: Prompt text to send to Claude Code
 
         Returns:
-            Claude Code output as string
+            Claude Code output as string (complete output for signal detection)
         """
         # Write prompt to temp file
         with tempfile.NamedTemporaryFile(
@@ -210,10 +213,18 @@ BLOCKED: <reason>
             # -p: pass prompt directly
             # --print: non-interactive output mode
             # --dangerously-skip-permissions: allow file writes for autonomous operation
-            # Pass API key from Swanson config to ensure correct key is used
+            # Let Claude Code handle its own authentication.
+            # It will use (in priority order):
+            #   1. ANTHROPIC_API_KEY env var (if set and valid)
+            #   2. OAuth tokens from macOS Keychain / Windows Credential Manager
+            #   3. ~/.claude.json credentials
+            # We just pass through the environment - no manipulation needed.
             env = os.environ.copy()
-            env["ANTHROPIC_API_KEY"] = config.api_key
-            result = subprocess.run(
+
+            # US-001: Stream output instead of buffering
+            # Use Popen with line buffering for cross-platform compatibility
+            # Works on Windows (cmd/PowerShell) and Unix-like systems (macOS, Linux)
+            process = subprocess.Popen(
                 [
                     "claude",
                     "-p", prompt,
@@ -221,14 +232,28 @@ BLOCKED: <reason>
                     "--print",
                     "--dangerously-skip-permissions",
                 ],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout for unified output
                 text=True,
+                bufsize=1,  # Line buffered - works on Windows and Unix
                 encoding="utf-8",
                 env=env,
             )
 
-            # Return combined stdout and stderr
-            return result.stdout + result.stderr
+            # Capture output line-by-line while streaming to terminal
+            output_lines = []
+            for line in process.stdout:
+                # Stream each line to terminal immediately (with flush)
+                print(line, end="", flush=True)
+                # Capture for signal detection later
+                output_lines.append(line)
+
+            # Wait for process to complete
+            return_code = process.wait()
+
+            # Return combined output for signal detection
+            full_output = "".join(output_lines)
+            return full_output
 
         finally:
             # Clean up temp file
