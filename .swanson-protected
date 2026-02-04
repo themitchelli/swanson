@@ -1,0 +1,13 @@
+# PROTECTED FILES - Do not delete or replace without explicit human approval
+# These files define Swanson's core identity and orchestration capability
+#
+# If Claude Code suggests deleting or replacing these, STOP and ask Steve first.
+#
+# History:
+#   - 2026-02-04: Created after commit 4858e16 accidentally gutted orchestration
+#                 by syncing library-only code from dogfood repo
+
+src/swanson/executor.py      # Contains Executor class, test generation, implementation prompts
+src/swanson/loop.py          # Main orchestration loop
+tests/test_architecture.py   # Smoke tests that verify core components exist
+.swanson-protected           # This file (meta-protection)
