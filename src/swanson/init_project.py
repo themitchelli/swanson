@@ -170,6 +170,18 @@ def create_project_structure(project_dir: Optional[Path] = None) -> bool:
             encoding="utf-8"
         )
 
+    # Create initial history.md if it doesn't exist
+    history_file = project_dir / "history.md"
+    if not history_file.exists():
+        history_content = """# Swanson Framework - Execution History
+
+This file is an append-only audit trail. Never read during execution.
+
+---
+
+"""
+        history_file.write_text(history_content, encoding="utf-8")
+
     return True
 
 

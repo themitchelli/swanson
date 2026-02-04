@@ -36,7 +36,9 @@ def cmd_init(args: argparse.Namespace) -> int:
             print(f"\n✓ Created project directories:")
             for dir_name in PROJECT_DIRS:
                 print(f"    - {dir_name}/")
-            print(f"\n✓ Created state.json")
+            print(f"\n✓ Created control files:")
+            print(f"    - state.json (execution state)")
+            print(f"    - history.md (audit trail)")
             print("\nNext steps:")
             print("1. Review and customize template files in .swanson/")
             print("2. Create PRD files in prds/")
