@@ -8,14 +8,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from swanson.init_project import copy_templates, TEMPLATE_FILES
+from swanson.init_project import init_project, TEMPLATE_FILES, PROJECT_DIRS
 
 
 def cmd_init(args: argparse.Namespace) -> int:
     """
     Initialize a new Swanson project.
 
-    Copies template files to target directory's .swanson/ folder.
+    Creates .swanson/ with templates, prds/, tests/, and state.json.
     """
     # Determine target directory
     if args.directory:
@@ -23,20 +23,20 @@ def cmd_init(args: argparse.Namespace) -> int:
     else:
         target_dir = Path.cwd()
 
-    # Create .swanson subdirectory
-    swanson_dir = target_dir / ".swanson"
-
     print(f"Initializing Swanson project in: {target_dir}")
-    print(f"Creating .swanson/ directory...")
 
     try:
-        success = copy_templates(swanson_dir)
+        success = init_project(target_dir)
 
         if success:
             print(f"\n✓ Successfully initialized project")
-            print(f"✓ Copied {len(TEMPLATE_FILES)} template files to {swanson_dir}/:")
+            print(f"\n✓ Created .swanson/ with {len(TEMPLATE_FILES)} template files:")
             for filename in TEMPLATE_FILES:
-                print(f"  - {filename}")
+                print(f"    - {filename}")
+            print(f"\n✓ Created project directories:")
+            for dir_name in PROJECT_DIRS:
+                print(f"    - {dir_name}/")
+            print(f"\n✓ Created state.json")
             print("\nNext steps:")
             print("1. Review and customize template files in .swanson/")
             print("2. Create PRD files in prds/")

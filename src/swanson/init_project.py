@@ -2,11 +2,12 @@
 Project initialization for Swanson Framework.
 
 Copies template files from the package's templates/ directory to a target
-project's .swanson/ directory.
+project's .swanson/ directory and creates the full project structure.
 """
 
+import json
 import shutil
-from importlib import resources
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +18,14 @@ TEMPLATE_FILES = [
     "standards.md",
     "context-map.md",
     "prd-schema.md",
+]
+
+# Directories to create
+PROJECT_DIRS = [
+    "prds",
+    "prds/archive",
+    "tests",
+    "tests/regression",
 ]
 
 
@@ -110,6 +119,90 @@ def copy_templates(target_dir: Optional[Path] = None) -> bool:
 
     # Verify all files were copied
     if copied_count != len(TEMPLATE_FILES):
+        return False
+
+    return True
+
+
+def create_project_structure(project_dir: Optional[Path] = None) -> bool:
+    """
+    Create the full Swanson project structure.
+
+    Creates:
+    - prds/ directory for PRD files
+    - prds/archive/ for completed PRDs
+    - tests/ directory (if not exists)
+    - tests/regression/ for passing tests
+    - state.json initial state file
+
+    Args:
+        project_dir: Root directory of the project.
+                    If None, uses current directory.
+
+    Returns:
+        True if successful, False if failed.
+    """
+    if project_dir is None:
+        project_dir = Path.cwd()
+    else:
+        project_dir = Path(project_dir)
+
+    project_dir = project_dir.resolve()
+
+    # Create directories
+    for dir_path in PROJECT_DIRS:
+        full_path = project_dir / dir_path
+        full_path.mkdir(parents=True, exist_ok=True)
+
+    # Create initial state.json if it doesn't exist
+    state_file = project_dir / "state.json"
+    if not state_file.exists():
+        initial_state = {
+            "current_prd": None,
+            "current_story": None,
+            "completed_stories": [],
+            "remaining_stories": [],
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "session_count": 0,
+        }
+        state_file.write_text(
+            json.dumps(initial_state, indent=2),
+            encoding="utf-8"
+        )
+
+    return True
+
+
+def init_project(project_dir: Optional[Path] = None) -> bool:
+    """
+    Initialize a complete Swanson project.
+
+    This is the main entry point that:
+    1. Creates .swanson/ with template files
+    2. Creates prds/, tests/, and other directories
+    3. Creates initial state.json
+
+    Args:
+        project_dir: Root directory of the project.
+                    If None, uses current directory.
+
+    Returns:
+        True if successful, False if failed.
+    """
+    if project_dir is None:
+        project_dir = Path.cwd()
+    else:
+        project_dir = Path(project_dir)
+
+    project_dir = project_dir.resolve()
+
+    # Create .swanson/ with templates
+    swanson_dir = project_dir / ".swanson"
+    if not copy_templates(swanson_dir):
+        return False
+
+    # Create project structure
+    if not create_project_structure(project_dir):
         return False
 
     return True
